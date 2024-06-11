@@ -373,6 +373,16 @@ impl Slab {
         self.ps.vals.clear();
         self.cs.instrs.clear();
     }
+
+    #[inline]
+    pub fn shrink_to_fit(&mut self) {
+        self.ps.exprs.iter_mut().for_each(|expr| expr.pairs.shrink_to_fit());
+        self.ps.exprs.shrink_to_fit();
+        self.ps.vals.shrink_to_fit();
+        self.ps.def_expr.pairs.shrink_to_fit();
+        self.ps.char_buf.shrink_to_fit();
+        self.cs.instrs.shrink_to_fit();
+    }
 }
 
 
