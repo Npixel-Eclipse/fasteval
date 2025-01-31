@@ -139,10 +139,15 @@ pub enum Instruction {
     IFuncATanH(InstructionI),
 
     IPrintFunc(PrintFunc),  // Not optimized (it would be pointless because of i/o bottleneck).
+
+    // my custom
+    IFuncIf{cond:IC, then:IC, els:IC},
 }
 use Instruction::{IConst, INeg, INot, IInv, IAdd, IMul, IMod, IExp, ILT, ILTE, IEQ, INE, IGTE, IGT, IOR, IAND, IVar, IFunc, IFuncInt, IFuncCeil, IFuncFloor, IFuncAbs, IFuncSign, IFuncLog, IFuncRound, IFuncMin, IFuncMax, IFuncSin, IFuncCos, IFuncTan, IFuncASin, IFuncACos, IFuncATan, IFuncSinH, IFuncCosH, IFuncTanH, IFuncASinH, IFuncACosH, IFuncATanH, IPrintFunc};
 #[cfg(feature="unsafe-vars")]
 use Instruction::IUnsafeVar;
+use crate::Instruction::IFuncIf;
+use crate::parser::StdFunc::EFuncIf;
 
 impl Default for Instruction {
     fn default() -> Self { IConst(std::f64::NAN) }
@@ -953,6 +958,13 @@ impl Compiler for StdFunc {
                 } else {
                     IFuncATanH(cslab.push_instr(instr))
                 }
+            }
+            EFuncIf {cond: ci, then: ti, els: ei} => {
+                let cond = get_expr!(pslab,ci).compile(pslab,cslab);
+                let then = get_expr!(pslab,ti).compile(pslab,cslab);
+                let els = get_expr!(pslab,ei).compile(pslab,cslab);
+
+                IFuncIf{cond:instr_to_ic!(cslab,cond), then:instr_to_ic!(cslab,then), els:instr_to_ic!(cslab,els)}
             }
         }
     }

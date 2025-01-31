@@ -134,6 +134,9 @@ pub enum StdFunc {
     EFuncASinH(ExpressionI),
     EFuncACosH(ExpressionI),
     EFuncATanH(ExpressionI),
+
+    // my custom
+    EFuncIf{cond:ExpressionI, then:ExpressionI, els:ExpressionI},
 }
 use StdFunc::{EVar, EFunc, EFuncInt, EFuncCeil, EFuncFloor, EFuncAbs, EFuncSign, EFuncLog, EFuncRound, EFuncMin, EFuncMax, EFuncE, EFuncPi, EFuncSin, EFuncCos, EFuncTan, EFuncASin, EFuncACos, EFuncATan, EFuncSinH, EFuncCosH, EFuncTanH, EFuncASinH, EFuncACosH, EFuncATanH};
 #[cfg(feature="unsafe-vars")]
@@ -173,6 +176,7 @@ enum Token<T> {
     Bite(T),
 }
 use Token::{Pass, Bite};
+use crate::parser::StdFunc::EFuncIf;
 
 macro_rules! peek {
     ($bs:ident) =>  {
@@ -839,6 +843,22 @@ impl Parser {
                                                      None => return Err(Error::Unreachable),
                                                  }))
                 } else { Err(Error::WrongArgs("atanh: expected one arg".to_string())) }
+            }
+            "if" => {
+                // pop은 뒤에서부터 제거하므로 인자를 역순으로 넣어야하는 것에 주의
+                if args.len()==3 { Ok(EFuncIf{els:match args.pop() {
+                                                   Some(xi) => xi,
+                                                   None => return Err(Error::Unreachable),
+                                               },
+                                               then:match args.pop() {
+                                                   Some(xi) => xi,
+                                                   None => return Err(Error::Unreachable),
+                                               },
+                                               cond:match args.pop() {
+                                                   Some(xi) => xi,
+                                                   None => return Err(Error::Unreachable),
+                                               }})
+                } else { Err(Error::WrongArgs("if: expected three args".to_string())) }
             }
 
             _ => {
