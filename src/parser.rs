@@ -105,6 +105,7 @@ use BinaryOp::{EAdd, ESub, EMul, EDiv, EMod, EExp, ELT, ELTE, EEQ, ENE, EGTE, EG
 #[derive(Debug, PartialEq)]
 pub enum StdFunc {
     EVar(String),
+    ETargetVar(String),
     #[cfg(feature="unsafe-vars")]
     EUnsafeVar{name:String, ptr:*const f64},
     EFunc{name:String, args:Vec<ExpressionI>},  // cap=4
@@ -176,7 +177,7 @@ enum Token<T> {
     Bite(T),
 }
 use Token::{Pass, Bite};
-use crate::parser::StdFunc::EFuncIf;
+use crate::parser::StdFunc::{EFuncIf, ETargetVar};
 
 macro_rules! peek {
     ($bs:ident) =>  {
@@ -595,7 +596,7 @@ impl Parser {
                         }
 
                         #[cfg(not(feature="unsafe-vars"))]
-                        Ok(Bite(EStdFunc(EVar(varname))))
+                        Ok(Bite(EStdFunc(self.distinguish_var(varname))))
                     }
                     Bite(open_parenth) => {
                         // VarNames with Parenthesis are first matched against builtins, then custom.
@@ -606,6 +607,13 @@ impl Parser {
                     }
                 }
             }
+        }
+    }
+
+    fn distinguish_var(&self, varname: String) -> StdFunc {
+        match varname.strip_prefix("T_") {
+            None => EVar(varname),
+            Some(stripped) => ETargetVar(stripped.to_string())
         }
     }
 

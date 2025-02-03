@@ -111,6 +111,7 @@ pub enum Instruction {
 
     //---- Callables:
     IVar(String),
+    ITargetVar(String),
     #[cfg(feature="unsafe-vars")]
     IUnsafeVar{name:String, ptr:*const f64},
     IFunc{name:String, args:Vec<IC>},
@@ -146,8 +147,8 @@ pub enum Instruction {
 use Instruction::{IConst, INeg, INot, IInv, IAdd, IMul, IMod, IExp, ILT, ILTE, IEQ, INE, IGTE, IGT, IOR, IAND, IVar, IFunc, IFuncInt, IFuncCeil, IFuncFloor, IFuncAbs, IFuncSign, IFuncLog, IFuncRound, IFuncMin, IFuncMax, IFuncSin, IFuncCos, IFuncTan, IFuncASin, IFuncACos, IFuncATan, IFuncSinH, IFuncCosH, IFuncTanH, IFuncASinH, IFuncACosH, IFuncATanH, IPrintFunc};
 #[cfg(feature="unsafe-vars")]
 use Instruction::IUnsafeVar;
-use crate::Instruction::IFuncIf;
-use crate::parser::StdFunc::EFuncIf;
+use crate::Instruction::{IFuncIf, ITargetVar};
+use crate::parser::StdFunc::{EFuncIf, ETargetVar};
 
 impl Default for Instruction {
     fn default() -> Self { IConst(std::f64::NAN) }
@@ -700,6 +701,7 @@ impl Compiler for StdFunc {
     fn compile(&self, pslab:&ParseSlab, cslab:&mut CompileSlab) -> Instruction {
         match self {
             EVar(name) => IVar(name.clone()),
+            ETargetVar(name) => ITargetVar(name.clone()),
             #[cfg(feature="unsafe-vars")]
             EUnsafeVar{name,ptr} => IUnsafeVar{name:name.clone(), ptr:*ptr},
             EFunc{name, args:xis} => {

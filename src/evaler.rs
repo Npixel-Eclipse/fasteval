@@ -10,7 +10,7 @@ use crate as fasteval;
 
 use crate::error::Error;
 use crate::slab::Slab;
-use crate::evalns::EvalNamespace;
+use crate::evalns::{EvalNamespace, TargetContext};
 use crate::parser::{Expression,
                     Value::{self, EConstant, EUnaryOp, EStdFunc, EPrintFunc},
                     UnaryOp::{self, EPos, ENeg, ENot, EParentheses},
@@ -28,8 +28,8 @@ use crate::compiler::Instruction::IUnsafeVar;
 use std::collections::BTreeSet;
 use std::f64::consts;
 use std::fmt;
-use crate::Instruction::IFuncIf;
-use crate::parser::StdFunc::EFuncIf;
+use crate::Instruction::{IFuncIf, ITargetVar};
+use crate::parser::StdFunc::{EFuncIf, ETargetVar};
 
 /// The same as `evaler.eval(&slab, &mut ns)`, but more efficient for common cases.
 ///
@@ -84,7 +84,7 @@ macro_rules! eval_compiled {
 ///
 #[macro_export]
 macro_rules! eval_compiled_ref {
-    ($evaler:ident, $slab_ref:expr, $ns_mut:expr) => {
+    ($evaler:ident, $slab_ref:expr, $ns_mut:expr, $tc_ref:expr) => {
         if let fasteval::IConst(c) = $evaler {
             *c
         } else {
@@ -93,24 +93,24 @@ macro_rules! eval_compiled_ref {
                 if let fasteval::IUnsafeVar{ptr, ..} = $evaler {
                     unsafe { **ptr }
                 } else {
-                    $evaler.eval($slab_ref, $ns_mut)?
+                    $evaler.eval($slab_ref, $ns_mut, $tc_ref)?
                 }
             }
 
             #[cfg(not(feature="unsafe-vars"))]
-            $evaler.eval($slab_ref, $ns_mut)?
+            $evaler.eval($slab_ref, $ns_mut, $tc_ref)?
         }
     };
-    ($evaler:expr, $slab_ref:expr, $ns_mut:expr) => {
+    ($evaler:expr, $slab_ref:expr, $ns_mut:expr, $tc_ref:expr) => {
         {
             let evaler = $evaler;
-            eval_compiled_ref!(evaler, $slab_ref, $ns_mut)
+            eval_compiled_ref!(evaler, $slab_ref, $ns_mut, $tc_ref)
         }
     };
 }
 
 macro_rules! eval_ic_ref {
-    ($ic:ident, $slab_ref:ident, $ns_mut:expr) => {
+    ($ic:ident, $slab_ref:ident, $ns_mut:expr, $tc_ref:expr) => {
         match $ic {
             IC::C(c) => *c,
             IC::I(i) => {
@@ -121,12 +121,12 @@ macro_rules! eval_ic_ref {
                     if let fasteval::IUnsafeVar{ptr, ..} = instr_ref {
                         unsafe { **ptr }
                     } else {
-                        instr_ref.eval($slab_ref, $ns_mut)?
+                        instr_ref.eval($slab_ref, $ns_mut, $tc_ref)?
                     }
                 }
 
                 #[cfg(not(feature="unsafe-vars"))]
-                instr_ref.eval($slab_ref, $ns_mut)?
+                instr_ref.eval($slab_ref, $ns_mut, $tc_ref)?
             }
         }
     }
@@ -139,7 +139,7 @@ pub trait Evaler : fmt::Debug {
     /// Evaluate this `Expression`/`Instruction` and return an `f64`.
     ///
     /// Returns a `fasteval::Error` if there are any problems, such as undefined variables.
-    fn eval(&self, slab:&Slab, ns:&mut impl EvalNamespace) -> Result<f64,Error>;
+    fn eval(&self, slab:&Slab, ns:&mut impl EvalNamespace, tc:&impl TargetContext) -> Result<f64,Error>;
 
     /// Don't call this directly.  Use `var_names()` instead.
     ///
@@ -163,7 +163,7 @@ impl Evaler for Expression {
             pair.1._var_names(slab,dst);
         }
     }
-    fn eval(&self, slab:&Slab, ns:&mut impl EvalNamespace) -> Result<f64,Error> {
+    fn eval(&self, slab:&Slab, ns:&mut impl EvalNamespace, tc:&impl TargetContext) -> Result<f64,Error> {
         // Order of operations: 1) ^  2) */  3) +-
         // Exponentiation should be processed right-to-left.  Think of what 2^3^4 should mean:
         //     2^(3^4)=2417851639229258349412352   <--- I choose this one.  https://codeplea.com/exponentiation-associativity-options
@@ -203,10 +203,10 @@ impl Evaler for Expression {
         // Code for new Expression data structure:
         let mut vals = Vec::<f64>::with_capacity(self.pairs.len()+1);
         let mut ops  = Vec::<BinaryOp>::with_capacity(self.pairs.len());
-        vals.push(self.first.eval(slab,ns)?);
+        vals.push(self.first.eval(slab,ns, tc)?);
         for pair in self.pairs.iter() {
             ops.push(pair.0);
-            vals.push(pair.1.eval(slab,ns)?);
+            vals.push(pair.1.eval(slab,ns, tc)?);
         }
 
 
@@ -314,12 +314,12 @@ impl Evaler for Value {
             EPrintFunc(f) => f._var_names(slab,dst),
         };
     }
-    fn eval(&self, slab:&Slab, ns:&mut impl EvalNamespace) -> Result<f64,Error> {
+    fn eval(&self, slab:&Slab, ns:&mut impl EvalNamespace, tc:&impl TargetContext) -> Result<f64,Error> {
         match self {
             EConstant(c) => Ok(*c),
-            EUnaryOp(u) => u.eval(slab,ns),
-            EStdFunc(f) => f.eval(slab,ns),
-            EPrintFunc(f) => f.eval(slab,ns),
+            EUnaryOp(u) => u.eval(slab,ns, tc),
+            EStdFunc(f) => f.eval(slab,ns, tc),
+            EPrintFunc(f) => f.eval(slab,ns, tc),
         }
     }
 }
@@ -331,12 +331,12 @@ impl Evaler for UnaryOp {
             EParentheses(expr_i) => get_expr!(slab.ps,expr_i)._var_names(slab,dst),
         }
     }
-    fn eval(&self, slab:&Slab, ns:&mut impl EvalNamespace) -> Result<f64,Error> {
+    fn eval(&self, slab:&Slab, ns:&mut impl EvalNamespace, tc:&impl TargetContext) -> Result<f64,Error> {
         match self {
-            EPos(val_i) => get_val!(slab.ps,val_i).eval(slab,ns),
-            ENeg(val_i) => Ok(-get_val!(slab.ps,val_i).eval(slab,ns)?),
-            ENot(val_i) => Ok(bool_to_f64!(f64_eq!(get_val!(slab.ps,val_i).eval(slab,ns)?,0.0))),
-            EParentheses(expr_i) => get_expr!(slab.ps,expr_i).eval(slab,ns),
+            EPos(val_i) => get_val!(slab.ps,val_i).eval(slab,ns, tc),
+            ENeg(val_i) => Ok(-get_val!(slab.ps,val_i).eval(slab,ns, tc)?),
+            ENot(val_i) => Ok(bool_to_f64!(f64_eq!(get_val!(slab.ps,val_i).eval(slab,ns, tc)?,0.0))),
+            EParentheses(expr_i) => get_expr!(slab.ps,expr_i).eval(slab,ns, tc),
         }
     }
 }
@@ -389,6 +389,7 @@ impl Evaler for StdFunc {
             EUnsafeVar{name, ..} => { dst.insert(name.clone()); }
 
             EVar(s) => { dst.insert(s.clone()); }
+            ETargetVar(s) => { dst.insert(s.clone()); }
             EFunc{name, args} => {
                 dst.insert(name.clone());
                 for arg in args {
@@ -420,7 +421,7 @@ impl Evaler for StdFunc {
             }
         };
     }
-    fn eval(&self, slab:&Slab, ns:&mut impl EvalNamespace) -> Result<f64,Error> {
+    fn eval(&self, slab:&Slab, ns:&mut impl EvalNamespace, tc:&impl TargetContext) -> Result<f64,Error> {
         match self {
             // These match arms are ordered in a way that I feel should deliver good performance.
             // (I don't think this ordering actually affects the generated code, though.)
@@ -429,72 +430,78 @@ impl Evaler for StdFunc {
             EUnsafeVar{ptr, ..} => unsafe { Ok(**ptr) },
 
             EVar(name) => eval_var!(ns, name, Vec::new(), unsafe{ &mut *(&slab.ps.char_buf as *const _ as *mut _) }),
+            ETargetVar(name) => {
+                match tc.lookup(name) {
+                    Some(f) => Ok(f),
+                    None => Err(Error::Undefined(name.to_string())),
+                }
+            }
             EFunc{name, args:xis} => {
                 let mut args = Vec::with_capacity(xis.len());
                 for xi in xis {
-                    args.push(get_expr!(slab.ps,xi).eval(slab,ns)?)
+                    args.push(get_expr!(slab.ps,xi).eval(slab,ns,tc)?)
                 }
                 eval_var!(ns, name, args, unsafe{ &mut *(&slab.ps.char_buf as *const _ as *mut _) })
             }
 
             EFuncIf {cond:ci, then:ti, els:ei} => {
-                if f64_ne!(get_expr!(slab.ps,ci).eval(slab,ns)?,0.0) {
-                    get_expr!(slab.ps,ti).eval(slab,ns)
+                if f64_ne!(get_expr!(slab.ps,ci).eval(slab,ns, tc)?,0.0) {
+                    get_expr!(slab.ps,ti).eval(slab,ns, tc)
                 } else {
-                    get_expr!(slab.ps,ei).eval(slab,ns)
+                    get_expr!(slab.ps,ei).eval(slab,ns, tc)
                 }
             }
 
             EFuncLog{base:base_opt, expr:expr_i} => {
                 let base = match base_opt {
-                    Some(b_expr_i) => get_expr!(slab.ps,b_expr_i).eval(slab,ns)?,
+                    Some(b_expr_i) => get_expr!(slab.ps,b_expr_i).eval(slab,ns, tc)?,
                     None => 10.0,
                 };
-                let n = get_expr!(slab.ps,expr_i).eval(slab,ns)?;
+                let n = get_expr!(slab.ps,expr_i).eval(slab,ns, tc)?;
                 Ok(log(base,n))
             }
 
-            EFuncSin(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns)?.sin()),
-            EFuncCos(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns)?.cos()),
-            EFuncTan(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns)?.tan()),
-            EFuncASin(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns)?.asin()),
-            EFuncACos(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns)?.acos()),
-            EFuncATan(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns)?.atan()),
-            EFuncSinH(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns)?.sinh()),
-            EFuncCosH(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns)?.cosh()),
-            EFuncTanH(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns)?.tanh()),
-            EFuncASinH(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns)?.asinh()),
-            EFuncACosH(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns)?.acosh()),
-            EFuncATanH(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns)?.atanh()),
+            EFuncSin(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns, tc)?.sin()),
+            EFuncCos(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns, tc)?.cos()),
+            EFuncTan(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns, tc)?.tan()),
+            EFuncASin(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns, tc)?.asin()),
+            EFuncACos(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns, tc)?.acos()),
+            EFuncATan(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns, tc)?.atan()),
+            EFuncSinH(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns, tc)?.sinh()),
+            EFuncCosH(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns, tc)?.cosh()),
+            EFuncTanH(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns, tc)?.tanh()),
+            EFuncASinH(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns, tc)?.asinh()),
+            EFuncACosH(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns, tc)?.acosh()),
+            EFuncATanH(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns, tc)?.atanh()),
 
             EFuncRound{modulus:modulus_opt, expr:expr_i} => {
                 let modulus = match modulus_opt {
-                    Some(m_expr_i) => get_expr!(slab.ps,m_expr_i).eval(slab,ns)?,
+                    Some(m_expr_i) => get_expr!(slab.ps,m_expr_i).eval(slab,ns, tc)?,
                     None => 1.0,
                 };
-                Ok((get_expr!(slab.ps,expr_i).eval(slab,ns)?/modulus).round() * modulus)
+                Ok((get_expr!(slab.ps,expr_i).eval(slab,ns, tc)?/modulus).round() * modulus)
             }
 
-            EFuncAbs(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns)?.abs()),
-            EFuncSign(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns)?.signum()),
-            EFuncInt(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns)?.trunc()),
-            EFuncCeil(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns)?.ceil()),
-            EFuncFloor(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns)?.floor()),
+            EFuncAbs(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns, tc)?.abs()),
+            EFuncSign(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns, tc)?.signum()),
+            EFuncInt(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns, tc)?.trunc()),
+            EFuncCeil(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns, tc)?.ceil()),
+            EFuncFloor(expr_i) => Ok(get_expr!(slab.ps,expr_i).eval(slab,ns, tc)?.floor()),
             EFuncMin{first:first_i, rest} => {
-                let mut min = get_expr!(slab.ps,first_i).eval(slab,ns)?;
+                let mut min = get_expr!(slab.ps,first_i).eval(slab,ns, tc)?;
                 let mut saw_nan = min.is_nan();
                 for x_i in rest.iter() {
-                    min = min.min(get_expr!(slab.ps,x_i).eval(slab,ns)?);
+                    min = min.min(get_expr!(slab.ps,x_i).eval(slab,ns, tc)?);
                     saw_nan = saw_nan || min.is_nan();
                 }
                 if saw_nan { Ok(std::f64::NAN)
                 } else { Ok(min) }
             }
             EFuncMax{first:first_i, rest} => {
-                let mut max = get_expr!(slab.ps,first_i).eval(slab,ns)?;
+                let mut max = get_expr!(slab.ps,first_i).eval(slab,ns, tc)?;
                 let mut saw_nan = max.is_nan();
                 for x_i in rest.iter() {
-                    max = max.max(get_expr!(slab.ps,x_i).eval(slab,ns)?);
+                    max = max.max(get_expr!(slab.ps,x_i).eval(slab,ns, tc)?);
                     saw_nan = saw_nan || max.is_nan();
                 }
                 if saw_nan { Ok(std::f64::NAN)
@@ -516,7 +523,7 @@ impl Evaler for PrintFunc {
             };
         }
     }
-    fn eval(&self, slab:&Slab, ns:&mut impl EvalNamespace) -> Result<f64,Error> {
+    fn eval(&self, slab:&Slab, ns:&mut impl EvalNamespace, tc:&impl TargetContext) -> Result<f64,Error> {
         let mut val = 0f64;
 
         fn process_str(s:&str) -> String {
@@ -541,7 +548,7 @@ impl Evaler for PrintFunc {
             if i>0 { out.push(' '); }
             match a {
                 EExpr(e_i) => {
-                    val = get_expr!(slab.ps,e_i).eval(slab,ns)?;
+                    val = get_expr!(slab.ps,e_i).eval(slab,ns, tc)?;
                     out.push_str(&val.to_string());
                 }
                 EStr(s) => out.push_str(&process_str(s))
@@ -560,6 +567,7 @@ impl Evaler for Instruction {
             IUnsafeVar{name, ..} => { dst.insert(name.clone()); }
 
             IVar(s) => { dst.insert(s.clone()); }
+            ITargetVar(s) => { dst.insert(s.clone()); }
             IFunc{name, args} => {
                 dst.insert(name.clone());
                 for ic in args {
@@ -594,82 +602,88 @@ impl Evaler for Instruction {
             }
         }
     }
-    fn eval(&self, slab:&Slab, ns:&mut impl EvalNamespace) -> Result<f64,Error> {
+    fn eval(&self, slab:&Slab, ns:&mut impl EvalNamespace, tc:&impl TargetContext) -> Result<f64,Error> {
         match self {
             // I have manually ordered these match arms in a way that I feel should deliver good performance.
             // (I don't think this ordering actually affects the generated code, though.)
 
             IMul(li,ric) => {
-                Ok( eval_compiled_ref!(get_instr!(slab.cs,li), slab, ns) *
-                    eval_ic_ref!(ric,slab,ns) )
+                Ok( eval_compiled_ref!(get_instr!(slab.cs,li), slab, ns, tc) *
+                    eval_ic_ref!(ric,slab,ns, tc) )
             }
             IAdd(li,ric) => {
-                Ok( eval_compiled_ref!(get_instr!(slab.cs,li), slab, ns) +
-                    eval_ic_ref!(ric, slab, ns) )
+                Ok( eval_compiled_ref!(get_instr!(slab.cs,li), slab, ns, tc) +
+                    eval_ic_ref!(ric, slab, ns, tc) )
             }
             IExp{base, power} => {
-                Ok( eval_ic_ref!(base, slab, ns).powf(
-                    eval_ic_ref!(power, slab, ns) ) )
+                Ok( eval_ic_ref!(base, slab, ns, tc).powf(
+                    eval_ic_ref!(power, slab, ns, tc) ) )
             }
 
-            INeg(i) => Ok(-eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns)),
-            IInv(i) => Ok(1.0/eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns)),
+            INeg(i) => Ok(-eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns, tc)),
+            IInv(i) => Ok(1.0/eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns, tc)),
 
             IVar(name) => eval_var!(ns, name, Vec::new(), unsafe{ &mut *(&slab.ps.char_buf as *const _ as *mut _) }),
+            ITargetVar(name) => {
+                match tc.lookup(name) {
+                    Some(f) => Ok(f),
+                    None => Err(Error::Undefined(name.to_string())),
+                }
+            }
             IFunc{name, args:ics} => {
                 let mut args = Vec::with_capacity(ics.len());
                 for ic in ics {
-                    args.push( eval_ic_ref!(ic, slab, ns) );
+                    args.push( eval_ic_ref!(ic, slab, ns, tc) );
                 }
                 eval_var!(ns, name, args, unsafe{ &mut *(&slab.ps.char_buf as *const _ as *mut _) })
             },
 
             IFuncIf {cond, then, els} => {
-                let condition_result = eval_ic_ref!(cond, slab, ns);
+                let condition_result = eval_ic_ref!(cond, slab, ns, tc);
                 if condition_result != 0.0 {
-                    Ok(eval_ic_ref!(then, slab, ns))
+                    Ok(eval_ic_ref!(then, slab, ns, tc))
                 } else {
-                    Ok(eval_ic_ref!(els, slab, ns))
+                    Ok(eval_ic_ref!(els, slab, ns, tc))
                 }
             }
 
             IFuncLog{base:baseic, of:ofic} => {
-                let base = eval_ic_ref!(baseic, slab, ns);
-                let of = eval_ic_ref!(ofic, slab, ns);
+                let base = eval_ic_ref!(baseic, slab, ns, tc);
+                let of = eval_ic_ref!(ofic, slab, ns, tc);
                 Ok(log(base,of))
             }
 
-            IFuncSin(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns).sin() ),
-            IFuncCos(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns).cos() ),
-            IFuncTan(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns).tan() ),
-            IFuncASin(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns).asin() ),
-            IFuncACos(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns).acos() ),
-            IFuncATan(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns).atan() ),
-            IFuncSinH(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns).sinh() ),
-            IFuncCosH(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns).cosh() ),
-            IFuncTanH(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns).tanh() ),
-            IFuncASinH(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns).asinh() ),
-            IFuncACosH(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns).acosh() ),
-            IFuncATanH(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns).atanh() ),
+            IFuncSin(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns, tc).sin() ),
+            IFuncCos(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns, tc).cos() ),
+            IFuncTan(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns, tc).tan() ),
+            IFuncASin(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns, tc).asin() ),
+            IFuncACos(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns, tc).acos() ),
+            IFuncATan(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns, tc).atan() ),
+            IFuncSinH(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns, tc).sinh() ),
+            IFuncCosH(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns, tc).cosh() ),
+            IFuncTanH(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns, tc).tanh() ),
+            IFuncASinH(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns, tc).asinh() ),
+            IFuncACosH(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns, tc).acosh() ),
+            IFuncATanH(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns, tc).atanh() ),
 
             IFuncRound{modulus:modic, of:ofic} => {
-                let modulus = eval_ic_ref!(modic, slab, ns);
-                let of = eval_ic_ref!(ofic, slab, ns);
+                let modulus = eval_ic_ref!(modic, slab, ns, tc);
+                let of = eval_ic_ref!(ofic, slab, ns, tc);
                 Ok( (of/modulus).round() * modulus )
             }
             IMod{dividend, divisor} => {
-                Ok( eval_ic_ref!(dividend, slab, ns) %
-                    eval_ic_ref!(divisor, slab, ns) )
+                Ok( eval_ic_ref!(dividend, slab, ns, tc) %
+                    eval_ic_ref!(divisor, slab, ns, tc) )
             }
 
-            IFuncAbs(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns).abs() ),
-            IFuncSign(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns).signum() ),
-            IFuncInt(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns).trunc() ),
-            IFuncCeil(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns).ceil() ),
-            IFuncFloor(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns).floor() ),
+            IFuncAbs(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns, tc).abs() ),
+            IFuncSign(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns, tc).signum() ),
+            IFuncInt(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns, tc).trunc() ),
+            IFuncCeil(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns, tc).ceil() ),
+            IFuncFloor(i) => Ok( eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns, tc).floor() ),
             IFuncMin(li,ric) => {
-                let left = eval_compiled_ref!(get_instr!(slab.cs,li), slab, ns);
-                let right = eval_ic_ref!(ric, slab, ns);
+                let left = eval_compiled_ref!(get_instr!(slab.cs,li), slab, ns, tc);
+                let right = eval_ic_ref!(ric, slab, ns, tc);
                 if left.is_nan() || right.is_nan() { return Ok(std::f64::NAN) }  // I need to implement NAN checks myself because the f64.min() function says that if one number is NaN, the other will be returned.
                 if left<right {
                     Ok(left)
@@ -678,8 +692,8 @@ impl Evaler for Instruction {
                 }
             }
             IFuncMax(li,ric) => {
-                let left = eval_compiled_ref!(get_instr!(slab.cs,li), slab, ns);
-                let right = eval_ic_ref!(ric, slab, ns);
+                let left = eval_compiled_ref!(get_instr!(slab.cs,li), slab, ns, tc);
+                let right = eval_ic_ref!(ric, slab, ns, tc);
                 if left.is_nan() || right.is_nan() { return Ok(std::f64::NAN) }
                 if left>right {
                     Ok(left)
@@ -690,48 +704,48 @@ impl Evaler for Instruction {
 
 
             IEQ(left, right) => {
-                Ok( bool_to_f64!(f64_eq!(eval_ic_ref!(left, slab, ns),
-                                         eval_ic_ref!(right, slab, ns))) )
+                Ok( bool_to_f64!(f64_eq!(eval_ic_ref!(left, slab, ns, tc),
+                                         eval_ic_ref!(right, slab, ns, tc))) )
             }
             INE(left, right) => {
-                Ok( bool_to_f64!(f64_ne!(eval_ic_ref!(left, slab, ns),
-                                         eval_ic_ref!(right, slab, ns))) )
+                Ok( bool_to_f64!(f64_ne!(eval_ic_ref!(left, slab, ns, tc),
+                                         eval_ic_ref!(right, slab, ns, tc))) )
             }
             ILT(left, right) => {
-                Ok( bool_to_f64!(eval_ic_ref!(left, slab, ns) <
-                                 eval_ic_ref!(right, slab, ns)) )
+                Ok( bool_to_f64!(eval_ic_ref!(left, slab, ns, tc) <
+                                 eval_ic_ref!(right, slab, ns, tc)) )
             }
             ILTE(left, right) => {
-                Ok( bool_to_f64!(eval_ic_ref!(left, slab, ns) <=
-                                 eval_ic_ref!(right, slab, ns)) )
+                Ok( bool_to_f64!(eval_ic_ref!(left, slab, ns, tc) <=
+                                 eval_ic_ref!(right, slab, ns, tc)) )
             }
             IGTE(left, right) => {
-                Ok( bool_to_f64!(eval_ic_ref!(left, slab, ns) >=
-                                 eval_ic_ref!(right, slab, ns)) )
+                Ok( bool_to_f64!(eval_ic_ref!(left, slab, ns, tc) >=
+                                 eval_ic_ref!(right, slab, ns, tc)) )
             }
             IGT(left, right) => {
-                Ok( bool_to_f64!(eval_ic_ref!(left, slab, ns) >
-                                 eval_ic_ref!(right, slab, ns)) )
+                Ok( bool_to_f64!(eval_ic_ref!(left, slab, ns, tc) >
+                                 eval_ic_ref!(right, slab, ns, tc)) )
             }
 
-            INot(i) => Ok(bool_to_f64!(f64_eq!(eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns),0.0))),
+            INot(i) => Ok(bool_to_f64!(f64_eq!(eval_compiled_ref!(get_instr!(slab.cs,i), slab, ns, tc),0.0))),
             IAND(lefti, rightic) => {
-                let left = eval_compiled_ref!(get_instr!(slab.cs,lefti), slab, ns);
+                let left = eval_compiled_ref!(get_instr!(slab.cs,lefti), slab, ns, tc);
                 if f64_eq!(left,0.0) { Ok(left) }
                 else {
-                    Ok(eval_ic_ref!(rightic, slab, ns))
+                    Ok(eval_ic_ref!(rightic, slab, ns, tc))
                 }
             }
             IOR(lefti, rightic) => {
-                let left = eval_compiled_ref!(get_instr!(slab.cs,lefti), slab, ns);
+                let left = eval_compiled_ref!(get_instr!(slab.cs,lefti), slab, ns, tc);
                 if f64_ne!(left,0.0) { Ok(left) }
                 else {
-                    Ok(eval_ic_ref!(rightic, slab, ns))
+                    Ok(eval_ic_ref!(rightic, slab, ns, tc))
                 }
             }
 
 
-            IPrintFunc(pf) => pf.eval(slab,ns),
+            IPrintFunc(pf) => pf.eval(slab,ns, tc),
 
 
             // Put these last because you should be using the eval_compiled*!() macros to eliminate function calls.

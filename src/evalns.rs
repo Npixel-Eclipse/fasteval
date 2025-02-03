@@ -24,8 +24,9 @@
 //! ```
 //! fn main() -> Result<(), fasteval::Error> {
 //!     let mut ns = fasteval::EmptyNamespace;
+//!     let tc = fasteval::evalns::EmptyTargetContext;
 //!
-//!     let val = fasteval::ez_eval("sin(pi()/2)", &mut ns)?;
+//!     let val = fasteval::ez_eval("sin(pi()/2)", &mut ns, &tc)?;
 //!     assert_eq!(val, 1.0);
 //!
 //!     Ok(())
@@ -37,8 +38,9 @@
 //! fn main() -> Result<(), fasteval::Error> {
 //!     let mut ns = fasteval::StringToF64Namespace::new();
 //!     ns.insert("x".to_string(), 2.0);
+//!     let tc = fasteval::evalns::EmptyTargetContext;
 //!
-//!     let val = fasteval::ez_eval("x * (x + 1)", &mut ns)?;
+//!     let val = fasteval::ez_eval("x * (x + 1)", &mut ns, &tc)?;
 //!     assert_eq!(val, 6.0);
 //!
 //!     Ok(())
@@ -50,8 +52,9 @@
 //! fn main() -> Result<(), fasteval::Error> {
 //!     let mut ns = fasteval::StrToF64Namespace::new();
 //!     ns.insert("x", 2.0);
+//!     let tc = fasteval::evalns::EmptyTargetContext;
 //!
-//!     let val = fasteval::ez_eval("x * (x + 1)", &mut ns)?;
+//!     let val = fasteval::ez_eval("x * (x + 1)", &mut ns, &tc)?;
 //!     assert_eq!(val, 6.0);
 //!
 //!     Ok(())
@@ -69,8 +72,9 @@
 //!             _ => None,
 //!         }
 //!     };
+//!     let tc = fasteval::evalns::EmptyTargetContext;
 //!
-//!     let val = fasteval::ez_eval("x * (x + 1)", &mut cb)?;
+//!     let val = fasteval::ez_eval("x * (x + 1)", &mut cb, &tc)?;
 //!     assert_eq!(val, 6.0);
 //!     assert_eq!(num_lookups, 2);  // Notice that 'x' was looked-up twice.
 //!
@@ -86,8 +90,9 @@
 //!     ns.insert("double".to_string(), Box::new(|args| {
 //!         args.get(0).map(|arg0| arg0*2.0).unwrap_or(std::f64::NAN)
 //!     }));
+//!     let tc = fasteval::evalns::EmptyTargetContext;
 //!
-//!     let val = fasteval::ez_eval("double(x + 1) + 1", &mut ns)?;
+//!     let val = fasteval::ez_eval("double(x + 1) + 1", &mut ns, &tc)?;
 //!     assert_eq!(val, 7.0);
 //!
 //!     Ok(())
@@ -102,8 +107,9 @@
 //!     ns.insert("double", Box::new(|args| {
 //!         args.get(0).map(|arg0| arg0*2.0).unwrap_or(std::f64::NAN)
 //!     }));
+//!     let tc = fasteval::evalns::EmptyTargetContext;
 //!
-//!     let val = fasteval::ez_eval("double(x + 1) + 1", &mut ns)?;
+//!     let val = fasteval::ez_eval("double(x + 1) + 1", &mut ns, &tc)?;
 //!     assert_eq!(val, 7.0);
 //!
 //!     Ok(())
@@ -128,8 +134,9 @@
 //!             }
 //!         };
 //!         let mut ns = fasteval::CachedCallbackNamespace::new(cb);
+//!         let tc = fasteval::evalns::EmptyTargetContext;
 //!
-//!         fasteval::ez_eval("x * (x + 1)", &mut ns)?
+//!         fasteval::ez_eval("x * (x + 1)", &mut ns, &tc)?
 //!     };
 //!     assert_eq!(val, 6.0);
 //!     assert_eq!(num_lookups, 1);  // Notice that only 1 lookup occurred.
@@ -147,8 +154,9 @@
 //!     layer1.insert("y".to_string(), 3.0);
 //!
 //!     let mut layers : fasteval::LayeredStringToF64Namespace = vec![layer1];
+//!     let tc = fasteval::evalns::EmptyTargetContext;
 //!
-//!     let val = fasteval::ez_eval("x * y", &mut layers)?;
+//!     let val = fasteval::ez_eval("x * y", &mut layers, &tc)?;
 //!     assert_eq!(val, 6.0);
 //!
 //!     // Let's add another layer which shadows the previous one:
@@ -156,13 +164,13 @@
 //!     layer2.insert("x".to_string(), 3.0);
 //!     layers.push(layer2);
 //!
-//!     let val = fasteval::ez_eval("x * y", &mut layers)?;
+//!     let val = fasteval::ez_eval("x * y", &mut layers, &tc)?;
 //!     assert_eq!(val, 9.0);
 //!
 //!     // Remove the top layer and we'll be back to what we had before:
 //!     layers.pop();
 //!
-//!     let val = fasteval::ez_eval("x * y", &mut layers)?;
+//!     let val = fasteval::ez_eval("x * y", &mut layers, &tc)?;
 //!     assert_eq!(val, 6.0);
 //!
 //!     Ok(())
@@ -199,6 +207,10 @@ pub trait EvalNamespace {
     ///
     /// May return cached values.
     fn lookup(&mut self, name:&str, args:Vec<f64>, keybuf:&mut String) -> Option<f64>;
+}
+
+pub trait TargetContext {
+    fn lookup(&self, name: &str) -> Option<f64>;
 }
 
 /// Cache operations for `EvalNamespace`s.
@@ -242,6 +254,14 @@ pub struct EmptyNamespace;
 pub struct CachedCallbackNamespace<'a> {
     cache:BTreeMap<String,f64>,
     cb   :Box<dyn FnMut(&str, Vec<f64>)->Option<f64> + 'a>,  // I think a reference would be more efficient than a Box, but then I would need to use a funky 'let cb=|n|{}; Namespace::new(&cb)' syntax.  The Box results in a super convenient pass-the-cb-by-value API interface.
+}
+
+pub struct EmptyTargetContext;
+
+impl TargetContext for EmptyTargetContext {
+    fn lookup(&self, _name: &str) -> Option<f64> {
+        None
+    }
 }
 
 //// I am commenting these out until I need them in real-life.
