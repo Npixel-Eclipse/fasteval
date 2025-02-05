@@ -37,14 +37,14 @@
 //!     let parser = fasteval::Parser::new();
 //!     let mut slab = fasteval::Slab::new();
 //!
-//!     let val = parser.parse("1+2*3-4", &mut slab.ps)?.from(&slab.ps).eval(&slab, &mut fasteval::EmptyNamespace)?;
+//!     let val = parser.parse("1+2*3-4", &mut slab.ps)?.from(&slab.ps).eval(&slab, &mut fasteval::EmptyNamespace, &fasteval::evalns::EmptyTargetContext)?;
 //!     assert_eq!(val, 3.0);
 //!
 //!     // Let's re-use the same slab again to save memory operations.
 //!
 //!     // `parse()` will clear the Slab's data.  It is important that you
 //!     // do not use an old expression after the Slab has been cleared.
-//!     let val = parser.parse("5+6*7-8", &mut slab.ps)?.from(&slab.ps).eval(&slab, &mut fasteval::EmptyNamespace)?;
+//!     let val = parser.parse("5+6*7-8", &mut slab.ps)?.from(&slab.ps).eval(&slab, &mut fasteval::EmptyNamespace, &fasteval::evalns::EmptyTargetContext)?;
 //!     assert_eq!(val, 39.0);
 //!
 //!     Ok(())
@@ -202,7 +202,7 @@ pub struct Slab {
 ///
 ///     for d in 0..360 {
 ///         deg = d as f64;
-///         let val = fasteval::eval_compiled!(compiled, &slab, &mut ns);
+///         let val = fasteval::eval_compiled!(compiled, &slab, &mut ns, &fasteval::evalns::EmptyTargetContext);
 ///         eprintln!("sin({}°) = {}", deg, val);
 ///     }
 ///

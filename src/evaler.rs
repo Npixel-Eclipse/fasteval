@@ -45,7 +45,7 @@ use crate::parser::StdFunc::{EFuncIf, ETargetVar};
 ///
 #[macro_export]
 macro_rules! eval_compiled {
-    ($evaler:ident, $slab_ref:expr, $ns_mut:expr) => {
+    ($evaler:ident, $slab_ref:expr, $ns_mut:expr, $tc_ref:expr) => {
         if let fasteval::IConst(c) = $evaler {
             c
         } else {
@@ -54,18 +54,18 @@ macro_rules! eval_compiled {
                 if let fasteval::IUnsafeVar{ptr, ..} = $evaler {
                     unsafe { *ptr }
                 } else {
-                    $evaler.eval($slab_ref, $ns_mut)?
+                    $evaler.eval($slab_ref, $ns_mut, $tc_ref)?
                 }
             }
 
             #[cfg(not(feature="unsafe-vars"))]
-            $evaler.eval($slab_ref, $ns_mut)?
+            $evaler.eval($slab_ref, $ns_mut, $tc_ref)?
         }
     };
-    ($evaler:expr, $slab_ref:expr, $ns_mut:expr) => {
+    ($evaler:expr, $slab_ref:expr, $ns_mut:expr, $tc_ref:expr) => {
         {
             let evaler = $evaler;
-            eval_compiled!(evaler, $slab_ref, $ns_mut)
+            eval_compiled!(evaler, $slab_ref, $ns_mut, $tc_ref)
         }
     };
 }

@@ -113,7 +113,7 @@
 //!     let mut ns = fasteval::EmptyNamespace;
 //!
 //!     let val = fasteval::ez_eval(
-//!         "1+2*3/4^5%6 + log(100K) + log(e(),100) + [3*(3-3)/3] + (2<3) && 1.23",    &mut ns)?;
+//!         "1+2*3/4^5%6 + log(100K) + log(e(),100) + [3*(3-3)/3] + (2<3) && 1.23",    &mut ns, &fasteval::evalns::EmptyTargetContext)?;
 //!     //    |            |      |    |   |          |               |   |
 //!     //    |            |      |    |   |          |               |   boolean logic with short-circuit support
 //!     //    |            |      |    |   |          |               comparisons
@@ -144,7 +144,7 @@
 //!     map.insert("y".to_string(), 2.0);
 //!     map.insert("z".to_string(), 3.0);
 //!
-//!     let val = fasteval::ez_eval(r#"x + print("y:",y) + z"#,    &mut map)?;
+//!     let val = fasteval::ez_eval(r#"x + print("y:",y) + z"#,    &mut map, &fasteval::evalns::EmptyTargetContext)?;
 //!     //                                 |
 //!     //                                 prints "y: 2" to stderr and then evaluates to 2.0
 //!
@@ -181,7 +181,7 @@
 //!         }
 //!     };
 //!
-//!     let val = fasteval::ez_eval("sum(x^2, y^2)^0.5 + data[0]",    &mut cb)?;
+//!     let val = fasteval::ez_eval("sum(x^2, y^2)^0.5 + data[0]",    &mut cb, &fasteval::evalns::EmptyTargetContext)?;
 //!     //                           |   |                   |
 //!     //                           |   |                   square-brackets act like parenthesis
 //!     //                           |   variables are like custom functions with zero args
@@ -238,11 +238,11 @@
 //!
 //!     let mut map : BTreeMap<String,f64> = BTreeMap::new();
 //!     map.insert("x".to_string(), 1.0);
-//!     let val = expr_ref.eval(&slab, &mut map)?;
+//!     let val = expr_ref.eval(&slab, &mut map, &fasteval::evalns::EmptyTargetContext)?;
 //!     assert_eq!(val, 2.0);
 //!
 //!     map.insert("x".to_string(), 2.5);
-//!     let val = expr_ref.eval(&slab, &mut map)?;
+//!     let val = expr_ref.eval(&slab, &mut map, &fasteval::evalns::EmptyTargetContext)?;
 //!     assert_eq!(val, 3.5);
 //!
 //!     // Now, let's re-use the Slab for a new expression.
@@ -253,7 +253,7 @@
 //!
 //!     let expr_ref = parser.parse("x * 10", &mut slab.ps)?.from(&slab.ps);
 //!
-//!     let val = expr_ref.eval(&slab, &mut map)?;
+//!     let val = expr_ref.eval(&slab, &mut map, &fasteval::evalns::EmptyTargetContext)?;
 //!     assert_eq!(val, 25.0);
 //!
 //!     Ok(())
@@ -275,6 +275,7 @@
 //!     let parser = fasteval::Parser::new();
 //!     let mut slab = fasteval::Slab::new();
 //!     let mut map = BTreeMap::new();
+//!     let tc = fasteval::evalns::EmptyTargetContext;
 //!
 //!     let expr_str = "sin(deg/360 * 2*pi())";
 //!     let compiled = parser.parse(expr_str, &mut slab.ps)?.from(&slab.ps).compile(&slab.ps, &mut slab.cs);
@@ -282,7 +283,7 @@
 //!         map.insert("deg".to_string(), deg as f64);
 //!         // When working with compiled constant expressions, you can use the
 //!         // eval_compiled*!() macros to save a function call:
-//!         let val = fasteval::eval_compiled!(compiled, &slab, &mut map);
+//!         let val = fasteval::eval_compiled!(compiled, &slab, &mut map, &tc);
 //!         eprintln!("sin({}°) = {}", deg, val);
 //!     }
 //!
@@ -318,10 +319,10 @@
 //!
 //!     let mut ns = fasteval::EmptyNamespace;  // We only define unsafe variables, not normal variables,
 //!                                             // so EmptyNamespace is fine.
-//!
+//!     let tc = fasteval::evalns::EmptyTargetContext;
 //!     for d in 0..360 {
 //!         deg = d as f64;
-//!         let val = fasteval::eval_compiled!(compiled, &slab, &mut ns);
+//!         let val = fasteval::eval_compiled!(compiled, &slab, &mut ns, &tc);
 //!         eprintln!("sin({}°) = {}", deg, val);
 //!     }
 //!

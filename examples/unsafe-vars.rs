@@ -33,7 +33,7 @@ fn main() -> Result<(), fasteval::Error> {
 
         for d in 0..360 {
             deg = d as f64;
-            let val = fasteval::eval_compiled!(compiled, &slab, &mut ns);
+            let val = fasteval::eval_compiled!(compiled, &slab, &mut ns, &fasteval::evalns::EmptyTargetContext);
             eprintln!("sin({}°) = {}", deg, val);
         }
 

@@ -14,7 +14,7 @@ fn main() -> Result<(), fasteval::Error> {
         map.insert("deg".to_string(), deg as f64);
         // When working with compiled constant expressions, you can use the
         // eval_compiled*!() macros to save a function call:
-        let val = fasteval::eval_compiled!(compiled, &slab, &mut map);
+        let val = fasteval::eval_compiled!(compiled, &slab, &mut map, &fasteval::evalns::EmptyTargetContext);
         eprintln!("sin({}°) = {}", deg, val);
     }
 

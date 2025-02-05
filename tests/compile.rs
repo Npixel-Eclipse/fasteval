@@ -38,8 +38,8 @@ fn basics() {
 "Slab{ exprs:{ 0:Expression { first: EConstant(3.0), pairs: [ExprPair(EMul, EConstant(3.0)), ExprPair(ESub, EConstant(3.0)), ExprPair(EDiv, EConstant(3.0)), ExprPair(EAdd, EConstant(1.0))] } }, vals:{}, instrs:{} }");
 
     (|| -> Result<(),Error> {
-        assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns), 9.0);
-        assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns), 9.0);
+        assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns, &fasteval::evalns::EmptyTargetContext), 9.0);
+        assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns, &fasteval::evalns::EmptyTargetContext), 9.0);
         Ok(())
     })().unwrap();
 }
@@ -73,10 +73,10 @@ fn comp_chk(expr_str:&str, expect_instr:Instruction, expect_fmt:&str, expect_eva
     });
 
     (|| -> Result<(),Error> {
-        assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns), expect_eval);
+        assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns, &fasteval::evalns::EmptyTargetContext), expect_eval);
 
         // Make sure Instruction eval matches normal eval:
-        assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns), expr.eval(&slab, &mut ns).unwrap());
+        assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns, &fasteval::evalns::EmptyTargetContext), expr.eval(&slab, &mut ns, &fasteval::evalns::EmptyTargetContext).unwrap());
 
         Ok(())
     })().unwrap();
@@ -132,10 +132,10 @@ fn unsafe_comp_chk(expr_str:&str, expect_fmt:&str, expect_eval:f64) {
 
     (|| -> Result<(),Error> {
         let mut ns = EmptyNamespace;
-        assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns), expect_eval);
+        assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns, &fasteval::evalns::EmptyTargetContext), expect_eval);
 
         // Make sure Instruction eval matches normal eval:
-        assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns), expr.eval(&slab, &mut ns).unwrap());
+        assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns, &fasteval::evalns::EmptyTargetContext), expr.eval(&slab, &mut ns, &fasteval::evalns::EmptyTargetContext).unwrap());
 
         Ok(())
     })().unwrap();
@@ -164,16 +164,16 @@ fn comp_chk_str(expr_str:&str, expect_instr:&str, expect_fmt:&str, expect_eval:f
 
     (|| -> Result<(),Error> {
         if expect_eval.is_nan() {
-            assert!(eval_compiled_ref!(&instr, &slab, &mut ns).is_nan());
+            assert!(eval_compiled_ref!(&instr, &slab, &mut ns, &fasteval::evalns::EmptyTargetContext).is_nan());
 
-            assert!(eval_compiled_ref!(&instr, &slab, &mut ns).is_nan());
-            assert!(expr.eval(&slab, &mut ns).unwrap().is_nan());
+            assert!(eval_compiled_ref!(&instr, &slab, &mut ns, &fasteval::evalns::EmptyTargetContext).is_nan());
+            assert!(expr.eval(&slab, &mut ns, &fasteval::evalns::EmptyTargetContext).unwrap().is_nan());
 
         } else {
-            assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns), expect_eval);
+            assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns, &fasteval::evalns::EmptyTargetContext), expect_eval);
 
             // Make sure Instruction eval matches normal eval:
-            assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns), expr.eval(&slab, &mut ns).unwrap());
+            assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns, &fasteval::evalns::EmptyTargetContext), expr.eval(&slab, &mut ns, &fasteval::evalns::EmptyTargetContext).unwrap());
         }
 
 
@@ -543,12 +543,12 @@ fn eval_macro() {
 
         let expr = Parser::new().parse("5", &mut slab.ps).unwrap().from(&slab.ps);
         let instr = expr.compile(&slab.ps, &mut slab.cs);
-        assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns), 5.0);
+        assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns, &fasteval::evalns::EmptyTargetContext), 5.0);
         (|| -> Result<(),Error> {
-            assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns), 5.0);
+            assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns, &fasteval::evalns::EmptyTargetContext), 5.0);
             Ok(())
         })().unwrap();
-        assert_eq!(eval_compiled!(instr, &slab, &mut ns), 5.0);
+        assert_eq!(eval_compiled!(instr, &slab, &mut ns, &fasteval::evalns::EmptyTargetContext), 5.0);
 
         #[cfg(feature="unsafe-vars")]
         {
@@ -556,12 +556,12 @@ fn eval_macro() {
             unsafe { slab.ps.add_unsafe_var("x".to_string(), &x) }
             let expr = Parser::new().parse("x", &mut slab.ps).unwrap().from(&slab.ps);
             let instr = expr.compile(&slab.ps, &mut slab.cs);
-            assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns), 1.0);
+            assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns, &fasteval::evalns::EmptyTargetContext), 1.0);
             (|| -> Result<(),Error> {
-                assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns), 1.0);
+                assert_eq!(eval_compiled_ref!(&instr, &slab, &mut ns, &fasteval::evalns::EmptyTargetContext), 1.0);
                 Ok(())
             })().unwrap();
-            assert_eq!(eval_compiled!(instr, &slab, &mut ns), 1.0);
+            assert_eq!(eval_compiled!(instr, &slab, &mut ns, &fasteval::evalns::EmptyTargetContext), 1.0);
         }
 
         Ok(())
