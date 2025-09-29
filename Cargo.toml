@@ -12,6 +12,7 @@ categories = ["mathematics", "science", "parser-implementations"]
 edition = "2018"
 
 [dependencies]
+fast-float2 = "0.2.3"
 
 [profile.bench]
 debug = true

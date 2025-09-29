@@ -413,7 +413,7 @@ impl Parser {
             }
         }
 
-        let val = tok.parse::<f64>().map_err(|_| { Error::ParseF64(tok.to_string()) })?;
+        let val = fast_float2::parse(tok).map_err(|_| { Error::ParseF64(tok.to_string()) })?;
         skip_n!(bs,toklen);
 
         Ok(Bite(val))
